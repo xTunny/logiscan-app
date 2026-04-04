@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // 
+    // Collection: suplidores
+    // Fields: nombre (string), rnc (string), telefono (string), email (string), rating (number)
+    //
+    // Collection: conuuces
+    // Fields: conduce_nro (string), fecha (string), suplidor_id (string), entregado_por (string), recibido_por (string), estado (string), foto_url (string)
+    //
+    // Collection: items
+    // Fields: conduce_id (string), descripcion (string), cantidad_impresa (number), cantidad_recibida (number), unidad (string), novedad_detectada (bool), auditado (bool)
+    //
+    // Collection: pendientes
+    // Fields: id (string), conduce_id (string), suplidor_id (string), suplidor_nombre (string), descripcion (string), cantidad_faltante (number), unidad (string), fecha_creacion (string), estado (string)
+    //
+    // Collection: users
+    // Fields: email (string), role (string), name (string)
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || 
+         (request.auth.token.email == "yimygenaog@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidSuplidor(data) {
+      return data.nombre is string && data.nombre.size() > 0 && data.nombre.size() < 100;
+    }
+
+    function isValidConduce(data) {
+      return data.conduce_nro is string && data.conduce_nro.size() > 0 &&
+             data.fecha is string &&
+             data.suplidor_id is string &&
+             (data.entregado_por is string || !('entregado_por' in data)) &&
+             (data.recibido_por is string || !('recibido_por' in data)) &&
+             (data.estado in ['pendiente_auditoria', 'completado', 'con_faltantes'] || !('estado' in data)) &&
+             (data.fecha_recepcion is string || !('fecha_recepcion' in data));
+    }
+
+    function isValidItem(data) {
+      return data.conduce_id is string &&
+             data.descripcion is string && data.descripcion.size() > 0 &&
+             data.cantidad_impresa is number &&
+             (data.cantidad_recibida is number || data.cantidad_recibida == null || !('cantidad_recibida' in data)) &&
+             (data.unidad is string || !('unidad' in data)) &&
+             (data.novedad_detectada is bool || !('novedad_detectada' in data)) &&
+             (data.auditado is bool || !('auditado' in data));
+    }
+
+    function isValidPendiente(data) {
+      return data.conduce_id is string &&
+             data.suplidor_id is string &&
+             data.descripcion is string &&
+             data.cantidad_faltante is number &&
+             data.estado in ['abierto', 'recibido'] &&
+             (data.cantidad_original is number || !('cantidad_original' in data)) &&
+             (data.cantidad_recibida_inicial is number || !('cantidad_recibida_inicial' in data)) &&
+             (data.fecha_recepcion_final is string || !('fecha_recepcion_final' in data));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && request.resource.data.role == 'user';
+      allow update: if isOwner(userId) && request.resource.data.role == resource.data.role;
+    }
+
+    match /suplidores/{suplidorId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidSuplidor(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /conduces/{conduceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidConduce(request.resource.data);
+      allow update: if isAuthenticated() && isValidConduce(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidItem(request.resource.data);
+      allow update: if isAuthenticated() && isValidItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /pendientes/{pendienteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPendiente(request.resource.data);
+      allow update: if isAuthenticated() && isValidPendiente(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

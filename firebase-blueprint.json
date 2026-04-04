@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "suplidor": {
+      "title": "Suplidor",
+      "description": "Información del proveedor de mercancía",
+      "type": "object",
+      "properties": {
+        "nombre": { "type": "string", "description": "Nombre de la empresa" }
+      },
+      "required": ["nombre"]
+    },
+    "conduce": {
+      "title": "Conduce",
+      "description": "Registro de entrada de mercancía",
+      "type": "object",
+      "properties": {
+        "conduce_nro": { "type": "string", "description": "Número de documento" },
+        "fecha": { "type": "string", "format": "date-time", "description": "Fecha del documento" },
+        "suplidor_id": { "type": "string", "description": "ID del suplidor" },
+        "entregado_por": { "type": "string", "description": "Nombre del transportista" },
+        "recibido_por": { "type": "string", "description": "Usuario que recibió" },
+        "estado": { "type": "string", "enum": ["pendiente_auditoria", "completado", "con_faltantes"], "description": "Estado del proceso" },
+        "foto_url": { "type": "string", "description": "URL de la imagen capturada" }
+      },
+      "required": ["conduce_nro", "fecha", "suplidor_id"]
+    },
+    "item": {
+      "title": "Item de Conduce",
+      "description": "Línea de producto en un conduce",
+      "type": "object",
+      "properties": {
+        "conduce_id": { "type": "string", "description": "ID del conduce padre" },
+        "descripcion": { "type": "string", "description": "Nombre del producto" },
+        "cantidad_impresa": { "type": "number", "description": "Cantidad según documento" },
+        "cantidad_recibida": { "type": "number", "description": "Cantidad física contada" },
+        "unidad": { "type": "string", "description": "Unidad de medida" },
+        "novedad_detectada": { "type": "boolean", "description": "Si la IA detectó marcas manuales" },
+        "auditado": { "type": "boolean", "description": "Si el usuario ya revisó esta línea" }
+      },
+      "required": ["conduce_id", "descripcion", "cantidad_impresa"]
+    },
+    "pendiente": {
+      "title": "Pendiente",
+      "description": "Mercancía faltante de un conduce",
+      "type": "object",
+      "properties": {
+        "conduce_id": { "type": "string", "description": "ID del conduce padre" },
+        "suplidor_id": { "type": "string", "description": "ID del suplidor" },
+        "suplidor_nombre": { "type": "string", "description": "Nombre del suplidor" },
+        "descripcion": { "type": "string", "description": "Nombre del producto" },
+        "cantidad_original": { "type": "number", "description": "Cantidad original del documento" },
+        "cantidad_recibida_inicial": { "type": "number", "description": "Cantidad recibida en la primera auditoría" },
+        "cantidad_faltante": { "type": "number", "description": "Cantidad que no llegó" },
+        "unidad": { "type": "string", "description": "Unidad de medida" },
+        "fecha_creacion": { "type": "string", "format": "date-time", "description": "Fecha en que se detectó el faltante" },
+        "fecha_recepcion_final": { "type": "string", "format": "date-time", "description": "Fecha en que se recibió finalmente" },
+        "estado": { "type": "string", "enum": ["abierto", "recibido"], "description": "Estado del pendiente" }
+      },
+      "required": ["conduce_id", "suplidor_id", "descripcion", "cantidad_faltante", "estado"]
+    }
+  },
+  "firestore": {
+    "/suplidores": { "schema": "suplidor", "description": "Colección de proveedores" },
+    "/conduces": { "schema": "conduce", "description": "Colección de documentos de entrada" },
+    "/items": { "schema": "item", "description": "Colección de productos por conduce" },
+    "/pendientes": { "schema": "pendiente", "description": "Colección de mercancía faltante" }
+  }
+}

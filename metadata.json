@@ -1,0 +1,5 @@
+{
+  "name": "LogiScan AI",
+  "description": "Digitalización inteligente de conduces de mercancía con extracción automática de datos a JSON.",
+  "requestFramePermissions": []
+}
