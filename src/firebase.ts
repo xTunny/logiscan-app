@@ -21,9 +21,9 @@ import {
   getDocs 
 } from 'firebase/firestore';
 
-// Configuración con la API KEY directa para evitar errores de conexión en Vercel
+// Configuración final con la API Key correcta verificada en Google Cloud
 const firebaseConfig = {
-  apiKey: "TU_API_KEY_AQUÍ", // <--- PEGA AQUÍ TU LLAVE (LA QUE EMPIEZA CON AIzaSy)
+  apiKey: "AIzaSyA323E4zyCs2_Qrpz7nHzIWYa3DrA8vYcw", 
   authDomain: "gen-lang-client-0416870184.firebaseapp.com",
   projectId: "gen-lang-client-0416870184",
   storageBucket: "gen-lang-client-0416870184.firebasestorage.app",
@@ -39,7 +39,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Forzar la selección de cuenta de Google
+// Configurar para que Google siempre pida elegir la cuenta
 googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
