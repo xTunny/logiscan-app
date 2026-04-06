@@ -21,7 +21,7 @@ import {
   getDocs 
 } from 'firebase/firestore';
 
-// Configuración final con la API Key correcta verificada en Google Cloud
+// Configuración final con la API Key correcta verificada
 const firebaseConfig = {
   apiKey: "AIzaSyA323E4zyCs2_Qrpz7nHzIWYa3DrA8vYcw", 
   authDomain: "gen-lang-client-0416870184.firebaseapp.com",
@@ -34,9 +34,15 @@ const firebaseConfig = {
 // Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 
-// Exportar servicios
+// EXPORTAR SERVICIOS
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+/**
+ * IMPORTANTE: Aquí especificamos el ID de la base de datos 
+ * donde están tus registros de "conduces" y "Genao Yimy".
+ */
+export const db = getFirestore(app, "ai-studio-141ffde9-4d74-461d-bc56-722e70891227");
+
 export const googleProvider = new GoogleAuthProvider();
 
 // Configurar para que Google siempre pida elegir la cuenta
