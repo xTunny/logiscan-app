@@ -21,9 +21,9 @@ import {
   getDocs 
 } from 'firebase/firestore';
 
-// Configuración dinámica que utiliza las Variables de Entorno de Vercel
+// Configuración con la API KEY directa para evitar errores de conexión en Vercel
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  apiKey: "TU_API_KEY_AQUÍ", // <--- PEGA AQUÍ TU LLAVE (LA QUE EMPIEZA CON AIzaSy)
   authDomain: "gen-lang-client-0416870184.firebaseapp.com",
   projectId: "gen-lang-client-0416870184",
   storageBucket: "gen-lang-client-0416870184.firebasestorage.app",
@@ -39,7 +39,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Configurar persistencia de sesión (opcional pero recomendado)
+// Forzar la selección de cuenta de Google
 googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
