@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
+// IMPORTANTE: Asegúrate de que en tu package.json tengas "@google/generative-ai"
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { 
   FileText, 
   Upload, 
@@ -38,7 +39,7 @@ import {
   Download,
   BarChart3
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import { 
   auth, 
@@ -60,8 +61,8 @@ import {
   User as FirebaseUser
 } from './firebase';
 
-// Initialize Gemini
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// --- INITIALIZE GEMINI CON TU API KEY ---
+const genAI = new GoogleGenerativeAI("AIzaSyA323E4zyCs2_Qrpz7nHzIWYa3DrA8vYcw");
 
 // --- Types ---
 interface Suplidor {
@@ -505,7 +506,8 @@ function Capture({ user, setView, setSelectedConduce }: { user: FirebaseUser, se
 
     try {
       const base64Data = image.split(',')[1];
-      const model = "gemini-3-flash-preview";
+      // USAMOS EL MODELO GEMINI 1.5 FLASH (EL MÁS RECIENTE)
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `Actúa como un experto en logística. Analiza la imagen de este conduce y extrae la información técnica en JSON puro.
 Estructura:
@@ -515,18 +517,19 @@ Estructura:
   "items": [ { "descripcion": "", "cantidad_impresa": 0, "unidad": "", "novedad_detectada": false } ]
 }`;
 
-      const response = await genAI.models.generateContent({
-        model,
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inlineData: { data: base64Data, mimeType: "image/jpeg" } }
-          ]
-        }],
-        config: { responseMimeType: "application/json" }
-      });
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: "image/jpeg"
+          }
+        }
+      ]);
 
-      const extraction = JSON.parse(response.text);
+      const response = await result.response;
+      const text = response.text().replace(/```json|```/g, "").trim();
+      const extraction = JSON.parse(text);
       
       // 1. Handle Supplier (Simplified)
       const suplidorNombre = extraction.suplidor.nombre || "Suplidor Desconocido";
@@ -568,7 +571,7 @@ Estructura:
       setView('audit');
     } catch (err) {
       console.error(err);
-      alert("Error al procesar el documento. Intenta de nuevo.");
+      alert("Error al procesar el documento. Verifica tu conexión o intenta con otra foto.");
     } finally {
       setLoading(false);
     }
@@ -609,8 +612,8 @@ Estructura:
               {loading && (
                 <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex flex-col items-center justify-center">
                   <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-                  <p className="font-bold text-slate-800">Procesamiento Invisible...</p>
-                  <p className="text-sm text-slate-500">La IA está "leyendo" el documento</p>
+                  <p className="font-bold text-slate-800">Procesando con Gemini IA...</p>
+                  <p className="text-sm text-slate-500">Leyendo información del documento</p>
                 </div>
               )}
             </div>
@@ -1002,7 +1005,6 @@ function Pendings({ user, conduces }: { user: FirebaseUser | null, conduces: Con
       });
 
       // 2. Check if there are any other open pending items for this same conduce
-      // We can use the current 'pendientes' state for this check (excluding the one we just updated)
       const otherOpenPendings = pendientes.filter(item => 
         item.conduce_id === p.conduce_id && item.id !== p.id && item.estado === 'abierto'
       );
@@ -1394,4 +1396,3 @@ function ReportButton({ onClick, icon: Icon, title, description, loading }: { on
     </button>
   );
 }
-
