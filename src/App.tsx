@@ -36,7 +36,8 @@ import {
   MoreVertical,
   Trash2,
   Download,
-  BarChart3
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -169,7 +170,7 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [view, setView] = useState<'dashboard' | 'capture' | 'audit' | 'suppliers' | 'history' | 'pendings' | 'report'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'manual_entry' | 'capture' | 'audit' | 'suppliers' | 'history' | 'pendings' | 'report'>('dashboard');
   const [selectedConduce, setSelectedConduce] = useState<Conduce | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -295,6 +296,7 @@ export default function App() {
 
           <nav className="flex-1 space-y-2">
             <NavItem id="dashboard" icon={LayoutDashboard} label="Dashboard" />
+            <NavItem id="manual_entry" icon={Plus} label="Entrada Manual" />
             <NavItem id="audit" icon={ClipboardList} label="Auditoría" />
             <NavItem id="capture" icon={Camera} label="Captura Móvil" />
             <NavItem id="pendings" icon={Clock} label="Pendientes" />
@@ -356,6 +358,7 @@ export default function App() {
                 </div>
                 <nav className="space-y-2">
                   <NavItem id="dashboard" icon={LayoutDashboard} label="Dashboard" />
+                  <NavItem id="manual_entry" icon={Plus} label="Entrada Manual" />
                   <NavItem id="audit" icon={ClipboardList} label="Auditoría" />
                   <NavItem id="capture" icon={Camera} label="Captura Móvil" />
                   <NavItem id="pendings" icon={Clock} label="Pendientes" />
@@ -374,6 +377,11 @@ export default function App() {
             {view === 'dashboard' && (
               <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <Dashboard conduces={conduces} pendientes={pendientes} setView={setView} setSelectedConduce={setSelectedConduce} />
+              </motion.div>
+            )}
+            {view === 'manual_entry' && (
+              <motion.div key="manual_entry" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <ManualEntry user={user} setView={setView} setSelectedConduce={setSelectedConduce} suplidores={suplidores} />
               </motion.div>
             )}
             {view === 'capture' && (
@@ -415,6 +423,308 @@ export default function App() {
 
 // --- Sub-Views ---
 
+function ManualEntry({ user, setView, setSelectedConduce, suplidores }: { user: FirebaseUser, setView: any, setSelectedConduce: any, suplidores: Suplidor[] }) {
+  const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+  const [form, setForm] = useState({
+    conduce_nro: '',
+    suplidor_nombre: '',
+    fecha: new Date().toISOString().split('T')[0],
+    entregado_por: ''
+  });
+  const [items, setItems] = useState<{ descripcion: string, cantidad: number, unidad: string }[]>([
+    { descripcion: '', cantidad: 0, unidad: 'UND' }
+  ]);
+
+  const handleAiExtractText = async () => {
+    if (!pastedText.trim()) return;
+    setAiLoading(true);
+    try {
+      const model = "gemini-3-flash-preview";
+      const prompt = `Analiza este texto de un conduce de entrega y extrae la información en JSON puro.
+Estructura:
+{
+  "suplidor": { "nombre": "" },
+  "registro": { "fecha": "", "conduce_nro": "", "entregado_por": "" },
+  "items": [ { "descripcion": "", "cantidad_impresa": 0, "unidad": "" } ]
+}
+Texto: ${pastedText}`;
+
+      const response = await genAI.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      const extraction = JSON.parse(response.text);
+      
+      if (extraction.registro) {
+        setForm({
+          conduce_nro: extraction.registro.conduce_nro || form.conduce_nro,
+          suplidor_nombre: extraction.suplidor?.nombre || form.suplidor_nombre,
+          fecha: extraction.registro.fecha || form.fecha,
+          entregado_por: extraction.registro.entregado_por || form.entregado_por
+        });
+      }
+
+      if (extraction.items && extraction.items.length > 0) {
+        setItems(extraction.items.map((i: any) => ({
+          descripcion: i.descripcion,
+          cantidad: i.cantidad_impresa || i.cantidad || 0,
+          unidad: i.unidad || 'UND'
+        })));
+      }
+      setShowPaste(false);
+      setPastedText('');
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo extraer información del texto. Intenta digitarlo manualmente.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const addItem = () => {
+    setItems([...items, { descripcion: '', cantidad: 0, unidad: 'UND' }]);
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length > 1) {
+      setItems(items.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateItem = (index: number, field: string, value: any) => {
+    const newItems = [...items];
+    (newItems[index] as any)[field] = value;
+    setItems(newItems);
+  };
+
+  const handleSave = async () => {
+    if (!form.conduce_nro || !form.suplidor_nombre) {
+      alert("Por favor, completa el número de conduce y el suplidor.");
+      return;
+    }
+
+    if (items.some(i => !i.descripcion || i.cantidad <= 0)) {
+      alert("Por favor, completa todos los artículos con cantidades válidas.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const suplidorId = form.suplidor_nombre.toLowerCase().replace(/\s/g, '_');
+      await setDoc(doc(db, 'suplidores', suplidorId), {
+        nombre: form.suplidor_nombre,
+        id: suplidorId
+      }, { merge: true });
+
+      const conduceId = `C_${Date.now()}`;
+      const newConduce: Conduce = {
+        id: conduceId,
+        conduce_nro: form.conduce_nro,
+        fecha: form.fecha,
+        suplidor_id: suplidorId,
+        suplidor_nombre: form.suplidor_nombre,
+        entregado_por: form.entregado_por || "No especificado",
+        recibido_por: user.displayName || "Sistema",
+        estado: 'pendiente_auditoria'
+      };
+      await setDoc(doc(db, 'conduces', conduceId), newConduce);
+
+      for (const item of items) {
+        const itemId = `I_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        await setDoc(doc(db, 'items', itemId), {
+          descripcion: item.descripcion,
+          cantidad_impresa: item.cantidad,
+          unidad: item.unidad,
+          id: itemId,
+          conduce_id: conduceId,
+          cantidad_recibida: null,
+          auditado: false,
+          novedad_detectada: false
+        });
+      }
+
+      setSelectedConduce(newConduce);
+      setView('audit');
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el registro.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto space-y-6">
+      <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
+              <Plus className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">Entrada Manual</h2>
+              <p className="text-slate-500">Registra un nuevo conduce digitando los datos directamente.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowPaste(!showPaste)}
+            className="flex items-center gap-2 text-blue-600 font-bold text-sm bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition-all"
+          >
+            <FileText className="w-4 h-4" />
+            {showPaste ? 'Cerrar Pegar' : 'Pegar Texto (IA)'}
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {showPaste && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mb-8 overflow-hidden"
+            >
+              <div className="bg-slate-50 p-6 rounded-2xl border border-blue-100 space-y-4">
+                <p className="text-xs font-bold text-blue-600 uppercase">Pega aquí el texto del conduce (WhatsApp, Email, etc.)</p>
+                <textarea 
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="Ej: Conduce 456 de Suplidor X, 10 cajas de leche..."
+                  className="w-full h-32 p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+                <button 
+                  onClick={handleAiExtractText}
+                  disabled={aiLoading || !pastedText.trim()}
+                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-50 transition-all"
+                >
+                  {aiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                  Extraer con IA
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Número de Conduce</label>
+            <input 
+              type="text"
+              value={form.conduce_nro}
+              onChange={(e) => setForm({...form, conduce_nro: e.target.value})}
+              placeholder="Ej: 12345"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Suplidor</label>
+            <input 
+              list="suplidores-list"
+              type="text"
+              value={form.suplidor_nombre}
+              onChange={(e) => setForm({...form, suplidor_nombre: e.target.value})}
+              placeholder="Nombre del suplidor"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+            />
+            <datalist id="suplidores-list">
+              {suplidores.map(s => <option key={s.id} value={s.nombre} />)}
+            </datalist>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Fecha del Documento</label>
+            <input 
+              type="date"
+              value={form.fecha}
+              onChange={(e) => setForm({...form, fecha: e.target.value})}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Entregado por</label>
+            <input 
+              type="text"
+              value={form.entregado_por}
+              onChange={(e) => setForm({...form, entregado_por: e.target.value})}
+              placeholder="Nombre del transportista"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-slate-800">Artículos del Conduce</h3>
+            <button 
+              onClick={addItem}
+              className="text-blue-600 text-sm font-bold flex items-center gap-1 hover:underline"
+            >
+              <Plus className="w-4 h-4" />
+              Agregar Línea
+            </button>
+          </div>
+          
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={index} className="flex gap-3 items-start bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="flex-1 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Descripción</label>
+                  <input 
+                    type="text"
+                    value={item.descripcion}
+                    onChange={(e) => updateItem(index, 'descripcion', e.target.value)}
+                    placeholder="Nombre del producto"
+                    className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-slate-700"
+                  />
+                </div>
+                <div className="w-24 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Cant.</label>
+                  <input 
+                    type="number"
+                    value={item.cantidad || ''}
+                    onChange={(e) => updateItem(index, 'cantidad', Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-slate-700 text-center"
+                  />
+                </div>
+                <div className="w-20 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Unidad</label>
+                  <input 
+                    type="text"
+                    value={item.unidad}
+                    onChange={(e) => updateItem(index, 'unidad', e.target.value.toUpperCase())}
+                    className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-slate-700 text-center"
+                  />
+                </div>
+                <button 
+                  onClick={() => removeItem(index)}
+                  className="mt-6 p-2 text-slate-300 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-10 pt-6 border-t border-slate-100">
+          <button 
+            onClick={handleSave}
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+          >
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+            Guardar y Auditar
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function Dashboard({ conduces, pendientes, setView, setSelectedConduce }: { conduces: Conduce[], pendientes: any[], setView: any, setSelectedConduce: any }) {
   const stats = {
     total: conduces.length,
@@ -435,8 +745,15 @@ function Dashboard({ conduces, pendientes, setView, setSelectedConduce }: { cond
           onClick={() => setView('capture')}
           className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
         >
+          <Camera className="w-5 h-5" />
+          Captura IA
+        </button>
+        <button 
+          onClick={() => setView('manual_entry')}
+          className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-lg shadow-slate-100"
+        >
           <Plus className="w-5 h-5" />
-          Nueva Captura
+          Registro Manual
         </button>
       </div>
 
