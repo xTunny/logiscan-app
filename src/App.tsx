@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// Se mantiene la librería original que tu proyecto sí reconoce
+import { GoogleGenAI } from "@google/genai";
 import { 
   FileText, Upload, Copy, Check, Loader2, AlertCircle, Package, User, 
   Calendar, ClipboardList, ArrowRight, Camera, LayoutDashboard, Truck, 
@@ -12,7 +13,8 @@ import {
   LogOut, Menu, X, ArrowLeft, Edit3, CheckCircle2, MoreVertical, 
   Trash2, Download, BarChart3
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+// Se mantiene la librería de animaciones original
+import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { 
   auth, db, googleProvider, signInWithPopup, onAuthStateChanged, 
@@ -20,10 +22,10 @@ import {
   onSnapshot, query, where, orderBy, getDocs, User as FirebaseUser
 } from './firebase';
 
-// CONFIGURACIÓN IA
-const genAI = new GoogleGenerativeAI("AIzaSyA323E4zyCs2_Qrpz7nHzIWYa3DrA8vYcw");
+// CONFIGURACIÓN IA CON TU LLAVE
+const genAI = new GoogleGenAI({ apiKey: "AIzaSyA323E4zyCs2_Qrpz7nHzIWYa3DrA8vYcw" });
 
-// --- Interfaces ---
+// --- Interfaces de Datos ---[cite: 2]
 interface Suplidor { id: string; nombre: string; }
 interface Conduce {
   id: string; conduce_nro: string; fecha: string; fecha_recepcion?: string;
@@ -36,8 +38,7 @@ interface Item {
   cantidad_recibida: number | null; unidad: string; novedad_detectada: boolean; auditado: boolean;
 }
 
-// --- Componentes Principales ---[cite: 2]
-
+// --- Componente de Errores ---[cite: 2]
 const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
   const [hasError, setHasError] = useState(false);
   useEffect(() => {
@@ -86,11 +87,11 @@ export default function App() {
   if (loadingAuth) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-10 h-10" /></div>;
 
   if (!user) return (
-    <div className="min-h-screen bg-blue-600 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-md w-full">
         <FileText className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold mb-6">LogiScan AI</h1>
-        <button onClick={() => signInWithPopup(auth, googleProvider)} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700">
+        <h1 className="text-2xl font-bold text-slate-800">LogiScan AI</h1>
+        <button onClick={() => signInWithPopup(auth, googleProvider)} className="w-full mt-6 bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700">
           <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="G" /> Iniciar con Google
         </button>
       </motion.div>
@@ -107,7 +108,7 @@ export default function App() {
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50 flex">
         <aside className="hidden lg:flex w-72 bg-white border-r p-6 sticky top-0 h-screen flex-col">
-          <div className="flex items-center gap-3 mb-10 text-xl font-bold">
+          <div className="flex items-center gap-3 mb-10 text-xl font-bold text-slate-800">
             <div className="bg-blue-600 p-2 rounded-xl"><FileText className="text-white w-5 h-5" /></div> LogiScan <span className="text-blue-600">AI</span>
           </div>
           <nav className="flex-1 space-y-2">
@@ -119,7 +120,7 @@ export default function App() {
             <NavItem id="history" icon={Clock} label="Historial" />
             <NavItem id="report" icon={BarChart3} label="Reporte" />
           </nav>
-          <button onClick={() => auth.signOut()} className="mt-4 text-red-600 font-bold flex items-center gap-2 px-4 py-2 hover:bg-red-50 rounded-lg"><LogOut className="w-4 h-4" /> Salir</button>
+          <button onClick={() => auth.signOut()} className="mt-4 text-red-600 font-semibold flex items-center gap-2 px-4 py-2 hover:bg-red-50 rounded-lg"><LogOut className="w-4 h-4" /> Cerrar Sesión</button>
         </aside>
         <main className="flex-1 p-6 lg:p-10 overflow-auto">
           <AnimatePresence mode="wait">
@@ -127,7 +128,7 @@ export default function App() {
             {view === 'capture' && <Capture user={user} setView={setView} setSelectedConduce={setSelectedConduce} />}
             {view === 'audit' && <Audit selectedConduce={selectedConduce} setSelectedConduce={setSelectedConduce} setView={setView} />}
             {view === 'suppliers' && <Suppliers suplidores={suplidores} />}
-            {view === 'pendings' && <Pendings user={user} />}
+            {view === 'pendings' && <Pendings user={user} conduces={conduces} />}
             {view === 'history' && <History conduces={conduces} />}
             {view === 'report' && <Reports conduces={conduces} />}
           </AnimatePresence>
@@ -137,7 +138,7 @@ export default function App() {
   );
 }
 
-// --- Componentes de Diseño Detallado ---[cite: 2]
+// --- Componentes Detallados ---[cite: 2]
 
 function Dashboard({ conduces, setView, setSelectedConduce }: any) {
   const stats = {
@@ -149,7 +150,7 @@ function Dashboard({ conduces, setView, setSelectedConduce }: any) {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center"><h2 className="text-2xl font-bold">Dashboard Principal</h2><button onClick={() => setView('capture')} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex gap-2"><Plus /> Nueva Captura</button></div>
+      <div className="flex justify-between items-center"><h2 className="text-2xl font-bold">Dashboard Principal</h2><button onClick={() => setView('capture')} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex gap-2 shadow-lg"><Plus /> Nueva Captura</button></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard icon={FileText} label="Total Conduces" value={stats.total} color="blue" />
         <StatCard icon={AlertTriangle} label="Pendientes" value={stats.pendientes} color="amber" />
@@ -167,10 +168,10 @@ function Dashboard({ conduces, setView, setSelectedConduce }: any) {
             <tbody className="divide-y">
               {conduces.slice(0, 5).map(c => (
                 <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="p-4 font-mono font-bold">#{c.conduce_nro}</td>
-                  <td className="p-4">{c.suplidor_nombre}</td>
-                  <td className="p-4"><span className="px-2 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 uppercase">{c.estado.replace('_',' ')}</span></td>
-                  <td className="p-4"><button onClick={() => { setSelectedConduce(c); setView('audit'); }} className="text-blue-600 hover:underline">Ver</button></td>
+                  <td className="p-4 font-mono font-bold text-slate-700">#{c.conduce_nro}</td>
+                  <td className="p-4 text-slate-600">{c.suplidor_nombre}</td>
+                  <td className="p-4"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${c.estado==='completado' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>{c.estado.replace('_',' ')}</span></td>
+                  <td className="p-4"><button onClick={() => { setSelectedConduce(c); setView('audit'); }} className="text-blue-600 font-bold hover:underline">Auditar</button></td>
                 </tr>
               ))}
             </tbody>
@@ -186,7 +187,7 @@ function StatCard({ icon: Icon, label, value, color }: any) {
   return (
     <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4">
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colors[color]}`}><Icon className="w-6 h-6" /></div>
-      <div><p className="text-slate-400 text-xs font-bold uppercase">{label}</p><p className="text-2xl font-black">{value}</p></div>
+      <div><p className="text-slate-400 text-xs font-bold uppercase tracking-wider">{label}</p><p className="text-2xl font-black text-slate-800">{value}</p></div>
     </div>
   );
 }
@@ -199,10 +200,12 @@ function Capture({ user, setView, setSelectedConduce }: any) {
   const processIA = async () => {
     if (!image) return; setLoading(true);
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const prompt = "Analiza este documento y extrae JSON: { suplidor: { nombre: '' }, registro: { fecha: '', conduce_nro: '', entregado_por: '' }, items: [ { descripcion: '', cantidad_impresa: 0, unidad: '', novedad_detectada: false } ] }";
-      const result = await model.generateContent([prompt, { inlineData: { data: image.split(',')[1], mimeType: "image/jpeg" } }]);
-      const data = JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
+      const result = await genAI.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [{ parts: [{ text: prompt }, { inlineData: { data: image.split(',')[1], mimeType: "image/jpeg" } }] }]
+      });
+      const data = JSON.parse(result.text.replace(/```json|```/g, "").trim());
       const cId = `C_${Date.now()}`;
       const sId = data.suplidor.nombre.toLowerCase().replace(/\s/g, '_');
       await setDoc(doc(db, 'suplidores', sId), { nombre: data.suplidor.nombre, id: sId }, { merge: true });
@@ -210,18 +213,18 @@ function Capture({ user, setView, setSelectedConduce }: any) {
       await setDoc(doc(db, 'conduces', cId), newC);
       for (const i of data.items) { await setDoc(doc(db, 'items', `I_${Date.now()}_${Math.random()}`), { ...i, conduce_id: cId, cantidad_recibida: null, auditado: false }); }
       setSelectedConduce(newC); setView('audit');
-    } catch (e) { alert("Error al procesar con IA"); } finally { setLoading(false); }
+    } catch (e) { alert("Error de procesamiento con IA."); } finally { setLoading(false); }
   };
 
   return (
     <div className="max-w-xl mx-auto bg-white p-8 rounded-3xl shadow-xl border">
       {!image ? (
-        <div className="text-center py-10"><Camera className="w-12 h-12 text-blue-600 mx-auto mb-6" /><input type="file" accept="image/*" capture="environment" className="hidden" ref={inputRef} onChange={(e) => { const f = e.target.files?.[0]; if(f){ const r=new FileReader(); r.onload=()=>setImage(r.result as string); r.readAsDataURL(f); }}} /><button onClick={()=>inputRef.current?.click()} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-bold shadow-lg text-lg">Tomar Foto del Conduce</button></div>
+        <div className="text-center py-10"><Camera className="w-12 h-12 text-blue-600 mx-auto mb-6" /><input type="file" accept="image/*" capture="environment" className="hidden" ref={inputRef} onChange={(e) => { const f = e.target.files?.[0]; if(f){ const r=new FileReader(); r.onload=()=>setImage(r.result as string); r.readAsDataURL(f); }}} /><button onClick={()=>inputRef.current?.click()} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-bold shadow-lg">Tomar Foto del Conduce</button></div>
       ) : (
         <div className="space-y-6">
-          <img src={image} className="w-full rounded-2xl shadow-inner border" alt="Preview" />
-          {loading ? <div className="text-center font-bold text-blue-600 py-4"><Loader2 className="animate-spin mx-auto mb-2 w-8 h-8" /> Leyendo con IA...</div> : <button onClick={processIA} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg">Procesar Información</button>}
-          <button onClick={()=>setImage(null)} className="w-full text-slate-400 text-sm font-medium">Borrar y repetir foto</button>
+          <img src={image} className="w-full rounded-2xl border shadow-inner" alt="P" />
+          {loading ? <div className="text-center font-bold text-blue-600 py-4"><Loader2 className="animate-spin mx-auto mb-2 w-8 h-8" /> Analizando con IA...</div> : <button onClick={processIA} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg">Procesar Información</button>}
+          <button onClick={()=>setImage(null)} className="w-full text-slate-400 text-sm">Borrar y repetir</button>
         </div>
       )}
     </div>
@@ -245,11 +248,11 @@ function Audit({ selectedConduce, setSelectedConduce, setView }: any) {
 
   return (
     <div className="bg-white p-8 rounded-3xl border shadow-lg space-y-6">
-      <h2 className="text-2xl font-bold">Auditando #{selectedConduce.conduce_nro}</h2>
+      <h2 className="text-2xl font-bold text-slate-800">Auditando #{selectedConduce.conduce_nro}</h2>
       <div className="divide-y">
         {items.map(i => (
           <div key={i.id} className="py-4 flex justify-between items-center">
-            <div><p className="font-bold text-slate-800">{i.descripcion}</p><p className="text-xs text-slate-400 font-bold uppercase tracking-tighter">Esperado: {i.cantidad_impresa} {i.unidad}</p></div>
+            <div><p className="font-bold text-slate-800">{i.descripcion}</p><p className="text-xs text-slate-400 font-bold uppercase">Esperado: {i.cantidad_impresa} {i.unidad}</p></div>
             <input type="number" className="w-24 border rounded-xl p-3 text-center font-bold shadow-sm" placeholder="Cant" onChange={(e) => updateDoc(doc(db, 'items', i.id), { cantidad_recibida: Number(e.target.value), auditado: true })} />
           </div>
         ))}
@@ -264,20 +267,20 @@ function Audit({ selectedConduce, setSelectedConduce, setView }: any) {
 }
 
 function Suppliers({ suplidores }: any) {
-  return ( <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{suplidores.map((s: any) => ( <div key={s.id} className="bg-white p-8 rounded-2xl border text-center font-bold shadow-sm"><Truck className="mx-auto mb-3 text-blue-600 w-8 h-8" />{s.nombre}</div> ))}</div> );
+  return ( <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{suplidores.map((s: any) => ( <div key={s.id} className="bg-white p-8 rounded-2xl border text-center font-bold shadow-sm hover:border-blue-300 transition-all"><Truck className="mx-auto mb-3 text-blue-600 w-8 h-8" />{s.nombre}</div> ))}</div> );
 }
 
 function Pendings({ user }: any) {
   const [p, setP] = useState<any[]>([]);
   useEffect(() => { if(user) return onSnapshot(query(collection(db, 'pendientes'), where('estado', '==', 'abierto')), s => setP(s.docs.map(d => ({id: d.id, ...d.data()})))); }, [user]);
-  return ( <div className="bg-white rounded-3xl border overflow-hidden shadow-sm"><table className="w-full text-left"><thead className="bg-slate-50 font-bold text-xs uppercase"><tr><th className="p-5">Producto</th><th className="p-5">Faltante</th><th className="p-5">Suplidor</th></tr></thead><tbody className="divide-y">{p.map(x => (<tr key={x.id}><td className="p-5 font-bold text-slate-800">{x.descripcion}</td><td className="p-5 text-red-600 font-black">{x.cantidad_faltante}</td><td className="p-5 text-slate-500">{x.suplidor_nombre}</td></tr>))}</tbody></table></div> );
+  return ( <div className="bg-white rounded-3xl border overflow-hidden shadow-sm"><table className="w-full text-left"><thead className="bg-slate-50 font-bold text-xs uppercase"><tr><th className="p-5">Producto</th><th className="p-5">Faltante</th><th className="p-5 text-right">Suplidor</th></tr></thead><tbody className="divide-y">{p.map(x => (<tr key={x.id}><td className="p-5 font-bold text-slate-800">{x.descripcion}</td><td className="p-5 text-red-600 font-black">{x.cantidad_faltante}</td><td className="p-5 text-slate-500 text-right">{x.suplidor_nombre}</td></tr>))}</tbody></table></div> );
 }
 
 function History({ conduces }: any) {
-  return ( <div className="space-y-3">{conduces.map((c: any) => ( <div key={c.id} className="bg-white p-5 rounded-2xl border flex justify-between items-center shadow-sm"><div className="flex items-center gap-4"><div className="bg-slate-50 p-2 rounded-lg text-slate-600"><FileText className="w-5 h-5" /></div><div><p className="font-bold">#{c.conduce_nro}</p><p className="text-slate-500 text-xs font-bold uppercase tracking-tight">{c.suplidor_nombre}</p></div></div><span className="text-[10px] bg-slate-100 px-3 py-1 rounded-full font-bold text-slate-600 uppercase tracking-tighter shadow-sm">{c.estado.replace('_',' ')}</span></div> ))}</div> );
+  return ( <div className="space-y-3">{conduces.map((c: any) => ( <div key={c.id} className="bg-white p-5 rounded-2xl border flex justify-between items-center shadow-sm"><div className="flex items-center gap-4"><div className="bg-slate-50 p-2 rounded-lg text-slate-600"><FileText className="w-5 h-5" /></div><div><p className="font-bold">#{c.conduce_nro}</p><p className="text-slate-500 text-xs font-bold uppercase">{c.suplidor_nombre}</p></div></div><span className="text-[10px] bg-slate-100 px-3 py-1 rounded-full font-bold text-slate-600 uppercase tracking-tighter">{c.estado.replace('_',' ')}</span></div> ))}</div> );
 }
 
 function Reports({ conduces }: any) {
-  const exportExcel = () => { const ws = XLSX.utils.json_to_sheet(conduces); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "LogiScan"); XLSX.writeFile(wb, "Historial_Completo.xlsx"); };
-  return ( <div className="bg-white p-12 rounded-3xl border text-center shadow-sm max-w-lg mx-auto"><BarChart3 className="w-16 h-16 text-blue-600 mx-auto mb-6" /><h2 className="text-2xl font-bold mb-4">Exportar Operaciones</h2><p className="text-slate-500 mb-8 text-sm">Descarga el historial completo en formato Excel para reportes externos.</p><button onClick={exportExcel} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-bold flex gap-3 mx-auto items-center hover:bg-blue-700 transition-all"><Download className="w-5 h-5" /> Generar Excel</button></div> );
+  const exportar = () => { const ws = XLSX.utils.json_to_sheet(conduces); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventario"); XLSX.writeFile(wb, "Reporte_Completo.xlsx"); };
+  return ( <div className="bg-white p-12 rounded-3xl border text-center shadow-sm max-w-lg mx-auto"><BarChart3 className="w-16 h-16 text-blue-600 mx-auto mb-6" /><h2 className="text-2xl font-bold mb-4">Exportar Operaciones</h2><p className="text-slate-500 mb-8 text-sm">Descarga el historial completo en formato Excel.</p><button onClick={exportar} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-bold flex gap-3 mx-auto items-center hover:bg-blue-700 transition-all"><Download className="w-5 h-5" /> Descargar Excel</button></div> );
 }
