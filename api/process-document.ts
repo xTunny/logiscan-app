@@ -2,6 +2,16 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // 🔥 Configuración de CORS para asegurar que el Frontend pueda hablar con este Backend
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Si el navegador hace una petición previa de seguridad (OPTIONS), le decimos que todo está bien
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido. Usa POST.' });
   }
@@ -35,8 +45,9 @@ Estructura OBLIGATORIA (JSON puro):
   "items": [ { "descripcion": "", "cantidad_impresa": 0, "unidad": "", "novedad_detectada": false } ]
 }`;
 
+    // Límite de 14 segundos para no chocar con el límite gratuito de Vercel
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timeout IA')), 15000)
+      setTimeout(() => reject(new Error('Timeout IA')), 14000)
     );
 
     const callGemini = async () => {
