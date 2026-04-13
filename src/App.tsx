@@ -59,6 +59,7 @@ import {
   where, 
   orderBy,
   getDocs,
+  writeBatch,
   ref,
   uploadString,
   getDownloadURL,
@@ -171,8 +172,11 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [view, setView] = useState<'dashboard' | 'manual_entry' | 'capture' | 'audit' | 'suppliers' | 'history' | 'pendings' | 'report'>('dashboard');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'completado'>('all');
   const [selectedConduce, setSelectedConduce] = useState<Conduce | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [confirmData, setConfirmData] = useState<{ message: string, onConfirm: () => void } | null>(null);
+  const [alertData, setAlertData] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   // Data States
   const [conduces, setConduces] = useState<Conduce[]>([]);
@@ -227,6 +231,53 @@ export default function App() {
   };
 
   const handleLogout = () => auth.signOut();
+
+  const handleDeleteConduce = async (conduceId: string) => {
+    setConfirmData({
+      message: "¿Estás seguro de que deseas eliminar este conduce? Esta acción borrará también todos sus artículos y pendientes asociados y no se puede deshacer.",
+      onConfirm: async () => {
+        setConfirmData(null);
+        try {
+          const batch = writeBatch(db);
+          
+          // 1. Delete items
+          const qItems = query(collection(db, 'items'), where('conduce_id', '==', conduceId));
+          const snapItems = await getDocs(qItems);
+          snapItems.forEach(d => batch.delete(doc(db, 'items', d.id)));
+          
+          // 2. Delete pendientes
+          const qPendientes = query(collection(db, 'pendientes'), where('conduce_id', '==', conduceId));
+          const snapPendientes = await getDocs(qPendientes);
+          snapPendientes.forEach(d => batch.delete(doc(db, 'pendientes', d.id)));
+          
+          // 3. Delete conduce
+          batch.delete(doc(db, 'conduces', conduceId));
+          
+          await batch.commit();
+          setAlertData({ message: "Conduce eliminado correctamente.", type: 'success' });
+        } catch (err) {
+          console.error(err);
+          setAlertData({ message: "Error al eliminar el conduce.", type: 'error' });
+        }
+      }
+    });
+  };
+
+  const handleDeletePending = async (pendingId: string) => {
+    setConfirmData({
+      message: "¿Deseas eliminar este pendiente? El registro del conduce original no se verá afectado.",
+      onConfirm: async () => {
+        setConfirmData(null);
+        try {
+          await deleteDoc(doc(db, 'pendientes', pendingId));
+          setAlertData({ message: "Pendiente eliminado.", type: 'success' });
+        } catch (err) {
+          console.error(err);
+          setAlertData({ message: "Error al eliminar.", type: 'error' });
+        }
+      }
+    });
+  };
 
   if (loadingAuth) {
     return (
@@ -376,46 +427,98 @@ export default function App() {
           <AnimatePresence mode="wait">
             {view === 'dashboard' && (
               <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Dashboard conduces={conduces} pendientes={pendientes} setView={setView} setSelectedConduce={setSelectedConduce} />
+                <Dashboard conduces={conduces} pendientes={pendientes} setView={setView} setSelectedConduce={setSelectedConduce} setHistoryFilter={setHistoryFilter} onDeleteConduce={handleDeleteConduce} />
               </motion.div>
             )}
             {view === 'manual_entry' && (
               <motion.div key="manual_entry" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <ManualEntry user={user} setView={setView} setSelectedConduce={setSelectedConduce} suplidores={suplidores} />
+                <ManualEntry user={user} setView={setView} setSelectedConduce={setSelectedConduce} suplidores={suplidores} setAlertData={setAlertData} />
               </motion.div>
             )}
             {view === 'capture' && (
               <motion.div key="capture" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Capture user={user} setView={setView} setSelectedConduce={setSelectedConduce} />
+                <Capture user={user} setView={setView} setSelectedConduce={setSelectedConduce} suplidores={suplidores} setAlertData={setAlertData} />
               </motion.div>
             )}
             {view === 'audit' && (
               <motion.div key="audit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Audit selectedConduce={selectedConduce} setSelectedConduce={setSelectedConduce} setView={setView} conduces={conduces} user={user!} />
+                <Audit selectedConduce={selectedConduce} setSelectedConduce={setSelectedConduce} setView={setView} conduces={conduces} user={user!} setAlertData={setAlertData} onDeleteConduce={handleDeleteConduce} />
               </motion.div>
             )}
             {view === 'pendings' && (
               <motion.div key="pendings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Pendings user={user} pendientes={pendientes} setView={setView} setSelectedConduce={setSelectedConduce} conduces={conduces} />
+                <Pendings user={user} pendientes={pendientes} setView={setView} setSelectedConduce={setSelectedConduce} conduces={conduces} onDeletePending={handleDeletePending} setAlertData={setAlertData} />
               </motion.div>
             )}
             {view === 'suppliers' && (
               <motion.div key="suppliers" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Suppliers conduces={conduces} />
+                <Suppliers conduces={conduces} setConfirmData={setConfirmData} setAlertData={setAlertData} onDeleteConduce={handleDeleteConduce} />
               </motion.div>
             )}
             {view === 'history' && (
               <motion.div key="history" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <History conduces={conduces} />
+                <History conduces={conduces} initialFilter={historyFilter} onDeleteConduce={handleDeleteConduce} />
               </motion.div>
             )}
             {view === 'report' && (
               <motion.div key="report" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Reports conduces={conduces} />
+                <Reports conduces={conduces} setAlertData={setAlertData} />
               </motion.div>
             )}
           </AnimatePresence>
         </main>
+
+        <AnimatePresence>
+          {confirmData && (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+              >
+                <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <AlertTriangle className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 text-center mb-2">¿Estás seguro?</h3>
+                <p className="text-slate-500 text-center mb-8">{confirmData.message}</p>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setConfirmData(null)}
+                    className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={confirmData.onConfirm}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {alertData && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[110] w-full max-w-sm px-4">
+              <motion.div 
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 50, opacity: 0 }}
+                className={`p-4 rounded-2xl shadow-xl flex items-center gap-3 ${
+                  alertData.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                }`}
+              >
+                {alertData.type === 'success' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+                <p className="font-bold text-sm flex-1">{alertData.message}</p>
+                <button onClick={() => setAlertData(null)} className="p-1 hover:bg-white/20 rounded-lg">
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </ErrorBoundary>
   );
@@ -423,7 +526,7 @@ export default function App() {
 
 // --- Sub-Views ---
 
-function ManualEntry({ user, setView, setSelectedConduce, suplidores }: { user: FirebaseUser, setView: any, setSelectedConduce: any, suplidores: Suplidor[] }) {
+function ManualEntry({ user, setView, setSelectedConduce, suplidores, setAlertData }: { user: FirebaseUser, setView: any, setSelectedConduce: any, suplidores: Suplidor[], setAlertData: any }) {
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [showPaste, setShowPaste] = useState(false);
@@ -480,7 +583,7 @@ Texto: ${pastedText}`;
       setPastedText('');
     } catch (err) {
       console.error(err);
-      alert("No se pudo extraer información del texto. Intenta digitarlo manualmente.");
+      setAlertData({ message: "No se pudo extraer información del texto. Intenta digitarlo manualmente.", type: 'error' });
     } finally {
       setAiLoading(false);
     }
@@ -504,12 +607,12 @@ Texto: ${pastedText}`;
 
   const handleSave = async () => {
     if (!form.conduce_nro || !form.suplidor_nombre) {
-      alert("Por favor, completa el número de conduce y el suplidor.");
+      setAlertData({ message: "Por favor, completa el número de conduce y el suplidor.", type: 'error' });
       return;
     }
 
     if (items.some(i => !i.descripcion || i.cantidad <= 0)) {
-      alert("Por favor, completa todos los artículos con cantidades válidas.");
+      setAlertData({ message: "Por favor, completa todos los artículos con cantidades válidas.", type: 'error' });
       return;
     }
 
@@ -552,7 +655,7 @@ Texto: ${pastedText}`;
       setView('audit');
     } catch (err) {
       console.error(err);
-      alert("Error al guardar el registro.");
+      setAlertData({ message: "Error al guardar el registro.", type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -725,7 +828,7 @@ Texto: ${pastedText}`;
   );
 }
 
-function Dashboard({ conduces, pendientes, setView, setSelectedConduce }: { conduces: Conduce[], pendientes: any[], setView: any, setSelectedConduce: any }) {
+function Dashboard({ conduces, pendientes, setView, setSelectedConduce, setHistoryFilter, onDeleteConduce }: { conduces: Conduce[], pendientes: any[], setView: any, setSelectedConduce: any, setHistoryFilter: any, onDeleteConduce: any }) {
   const stats = {
     total: conduces.length,
     pendientesAuditoria: conduces.filter(c => c.estado === 'pendiente_auditoria').length,
@@ -741,33 +844,64 @@ function Dashboard({ conduces, pendientes, setView, setSelectedConduce }: { cond
           <h2 className="text-2xl font-bold text-slate-800">Dashboard Principal</h2>
           <p className="text-slate-500 text-sm">Resumen de operaciones de almacén</p>
         </div>
-        <button 
-          onClick={() => setView('capture')}
-          className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-        >
-          <Camera className="w-5 h-5" />
-          Captura IA
-        </button>
-        <button 
-          onClick={() => setView('manual_entry')}
-          className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-lg shadow-slate-100"
-        >
-          <Plus className="w-5 h-5" />
-          Registro Manual
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button 
+            onClick={() => setView('capture')}
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+          >
+            <Camera className="w-5 h-5" />
+            Captura IA
+          </button>
+          <button 
+            onClick={() => setView('manual_entry')}
+            className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-lg shadow-slate-100"
+          >
+            <Plus className="w-5 h-5" />
+            Registro Manual
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={AlertTriangle} label="Pendientes Auditoría" value={stats.pendientesAuditoria} color="amber" />
-        <StatCard icon={Clock} label="Con Faltantes" value={stats.conFaltantes} color="red" />
-        <StatCard icon={Package} label="Ítems Pendientes" value={stats.itemsPendientes} color="blue" />
-        <StatCard icon={CheckCircle2} label="Total Completados" value={stats.completados} color="green" />
+        <StatCard 
+          icon={AlertTriangle} 
+          label="Pendientes Auditoría" 
+          value={stats.pendientesAuditoria} 
+          color="amber" 
+          onClick={() => setView('audit')}
+        />
+        <StatCard 
+          icon={Clock} 
+          label="Con Faltantes" 
+          value={stats.conFaltantes} 
+          color="red" 
+          onClick={() => setView('pendings')}
+        />
+        <StatCard 
+          icon={Package} 
+          label="Ítems Pendientes" 
+          value={stats.itemsPendientes} 
+          color="blue" 
+          onClick={() => setView('pendings')}
+        />
+        <StatCard 
+          icon={CheckCircle2} 
+          label="Total Completados" 
+          value={stats.completados} 
+          color="green" 
+          onClick={() => { setHistoryFilter('completado'); setView('history'); }}
+        />
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="font-bold text-slate-800">Entradas Recientes</h3>
-          <button className="text-blue-600 text-sm font-semibold hover:underline">Ver todo</button>
+          <h3 className="font-bold text-slate-800">Entradas Recientes (Top 10)</h3>
+          <button 
+            onClick={() => { setHistoryFilter('all'); setView('history'); }}
+            className="text-blue-600 text-sm font-semibold hover:underline"
+          >
+            Ver todo
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -800,8 +934,17 @@ function Dashboard({ conduces, pendientes, setView, setSelectedConduce }: { cond
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="p-2 group-hover:bg-blue-50 rounded-lg text-blue-600 transition-colors inline-block">
-                      <ChevronRight className="w-5 h-5" />
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onDeleteConduce(c.id); }}
+                        className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="p-2 group-hover:bg-blue-50 rounded-lg text-blue-600 transition-colors">
+                        <ChevronRight className="w-5 h-5" />
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -820,7 +963,7 @@ function Dashboard({ conduces, pendientes, setView, setSelectedConduce }: { cond
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any, label: string, value: number, color: 'blue' | 'amber' | 'green' | 'red' }) {
+function StatCard({ icon: Icon, label, value, color, onClick }: { icon: any, label: string, value: number, color: 'blue' | 'amber' | 'green' | 'red', onClick?: () => void }) {
   const colors = {
     blue: 'bg-blue-50 text-blue-600',
     amber: 'bg-amber-50 text-amber-600',
@@ -828,7 +971,10 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any, label: strin
     red: 'bg-red-50 text-red-600'
   };
   return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
+    <div 
+      onClick={onClick}
+      className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4 ${onClick ? 'cursor-pointer hover:border-blue-300 hover:shadow-md transition-all' : ''}`}
+    >
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colors[color]}`}>
         <Icon className="w-6 h-6" />
       </div>
@@ -840,13 +986,14 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any, label: strin
   );
 }
 
-function Capture({ user, setView, setSelectedConduce }: { user: FirebaseUser, setView: any, setSelectedConduce: any }) {
+function Capture({ user, setView, setSelectedConduce, suplidores, setAlertData }: { user: FirebaseUser, setView: any, setSelectedConduce: any, suplidores: Suplidor[], setAlertData: any }) {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'camera' | 'processing' | 'details'>('camera');
   const [manualDetails, setManualDetails] = useState({
     entregado_por: '',
-    fecha_recepcion: new Date().toISOString().split('T')[0]
+    fecha_recepcion: new Date().toISOString().split('T')[0],
+    suplidor_nombre: ''
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -862,9 +1009,11 @@ function Capture({ user, setView, setSelectedConduce }: { user: FirebaseUser, se
     }
   };
 
+  const [extractionData, setExtractionData] = useState<any>(null);
+
   const processAndSave = async () => {
     if (!image) {
-      alert("Por favor, captura o selecciona una imagen primero.");
+      setAlertData({ message: "Por favor, captura o selecciona una imagen primero.", type: 'error' });
       return;
     }
     setLoading(true);
@@ -899,23 +1048,46 @@ Estructura:
         extraction = JSON.parse(response.text);
       } catch (e) {
         console.error("Error parsing AI response:", response.text);
-        alert("Error al procesar la imagen. La IA no devolvió un formato válido. Por favor, intenta de nuevo con una foto más clara.");
+        setAlertData({ message: "Error al procesar la imagen. La IA no devolvió un formato válido. Por favor, intenta de nuevo con una foto más clara.", type: 'error' });
         setLoading(false);
         return;
       }
       
       // Validation: If no items, alert user
       if (!extraction.items || extraction.items.length === 0) {
-        alert("Documento no reconocido o sin artículos. Intenta otra foto más clara.");
+        setAlertData({ message: "Documento no reconocido o sin artículos. Intenta otra foto más clara.", type: 'error' });
         setLoading(false);
         return;
       }
+
+      setExtractionData(extraction);
+      setManualDetails({
+        ...manualDetails,
+        entregado_por: extraction.registro.entregado_por || '',
+        suplidor_nombre: extraction.suplidor.nombre || ''
+      });
+      setStep('details');
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setAlertData({ message: "Error al procesar el documento. Intenta de nuevo.", type: 'error' });
+      setLoading(false);
+    }
+  };
+
+  const saveFinal = async () => {
+    if (!manualDetails.suplidor_nombre) {
+      setAlertData({ message: "Por favor, confirma el nombre del suplidor.", type: 'error' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const compressedImage = await compressImage(image!);
       
-      // 2. Handle Supplier (Simplified)
-      const suplidorNombre = extraction.suplidor.nombre || "Suplidor Desconocido";
-      const suplidorId = suplidorNombre.toLowerCase().replace(/\s/g, '_');
+      // 2. Handle Supplier
+      const suplidorId = manualDetails.suplidor_nombre.toLowerCase().replace(/\s/g, '_');
       await setDoc(doc(db, 'suplidores', suplidorId), {
-        nombre: suplidorNombre,
+        nombre: manualDetails.suplidor_nombre,
         id: suplidorId
       }, { merge: true });
 
@@ -923,20 +1095,20 @@ Estructura:
       const conduceId = `C_${Date.now()}`;
       const newConduce: Conduce = {
         id: conduceId,
-        conduce_nro: extraction.registro.conduce_nro || `S/N-${Date.now()}`,
-        fecha: extraction.registro.fecha || new Date().toISOString(),
+        conduce_nro: extractionData.registro.conduce_nro || `S/N-${Date.now()}`,
+        fecha: extractionData.registro.fecha || new Date().toISOString(),
         fecha_recepcion: manualDetails.fecha_recepcion,
         suplidor_id: suplidorId,
-        suplidor_nombre: suplidorNombre,
-        entregado_por: manualDetails.entregado_por || extraction.registro.entregado_por || "No especificado",
+        suplidor_nombre: manualDetails.suplidor_nombre,
+        entregado_por: manualDetails.entregado_por || "No especificado",
         recibido_por: user.displayName || "Sistema",
         estado: 'pendiente_auditoria',
         foto_url: compressedImage
       };
       await setDoc(doc(db, 'conduces', conduceId), newConduce);
 
-      // 4. Create Items (cantidad_recibida starts as null)
-      for (const item of extraction.items) {
+      // 4. Create Items
+      for (const item of extractionData.items) {
         const itemId = `I_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         await setDoc(doc(db, 'items', itemId), {
           ...item,
@@ -951,7 +1123,7 @@ Estructura:
       setView('audit');
     } catch (err) {
       console.error(err);
-      alert("Error al procesar el documento. Intenta de nuevo.");
+      setAlertData({ message: "Error al guardar el documento.", type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1007,10 +1179,10 @@ Estructura:
                   Repetir Foto
                 </button>
                 <button 
-                  onClick={() => setStep('details')}
+                  onClick={processAndSave}
                   className="bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
                 >
-                  Siguiente
+                  Procesar
                   <ArrowRight className="w-5 h-5" />
                 </button>
               </div>
@@ -1018,26 +1190,48 @@ Estructura:
           </div>
         ) : (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-800 text-center">Detalles de Recepción</h2>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-slate-800">Confirmar Detalles</h2>
+              <p className="text-sm text-slate-500">Verifica que la información extraída sea correcta.</p>
+            </div>
+            
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Entregado por (Nombre)</label>
+              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                <label className="block text-[10px] font-black text-blue-600 uppercase mb-1 tracking-widest">Suplidor Detectado</label>
                 <input 
+                  list="suplidores-list-capture"
                   type="text"
-                  value={manualDetails.entregado_por}
-                  onChange={(e) => setManualDetails({...manualDetails, entregado_por: e.target.value})}
-                  placeholder="Nombre del transportista"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={manualDetails.suplidor_nombre}
+                  onChange={(e) => setManualDetails({...manualDetails, suplidor_nombre: e.target.value})}
+                  placeholder="Escribe el nombre del suplidor..."
+                  className="w-full px-0 bg-transparent border-none focus:ring-0 outline-none font-black text-xl text-slate-800 placeholder:text-slate-300"
                 />
+                <datalist id="suplidores-list-capture">
+                  {suplidores.map(s => <option key={s.id} value={s.nombre} />)}
+                </datalist>
+                <p className="text-[10px] text-blue-400 mt-1 italic">Sugerencia: Selecciona uno existente para evitar duplicados.</p>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Fecha de Recepción</label>
-                <input 
-                  type="date"
-                  value={manualDetails.fecha_recepcion}
-                  onChange={(e) => setManualDetails({...manualDetails, fecha_recepcion: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Entregado por</label>
+                  <input 
+                    type="text"
+                    value={manualDetails.entregado_por}
+                    onChange={(e) => setManualDetails({...manualDetails, entregado_por: e.target.value})}
+                    placeholder="Nombre del transportista"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Fecha de Recepción</label>
+                  <input 
+                    type="date"
+                    value={manualDetails.fecha_recepcion}
+                    onChange={(e) => setManualDetails({...manualDetails, fecha_recepcion: e.target.value})}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4 pt-4">
@@ -1048,12 +1242,12 @@ Estructura:
                 Atrás
               </button>
               <button 
-                onClick={processAndSave}
+                onClick={saveFinal}
                 disabled={loading}
                 className="bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
               >
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                Procesar Conduce
+                Guardar y Auditar
               </button>
             </div>
           </div>
@@ -1063,7 +1257,7 @@ Estructura:
   );
 }
 
-function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user }: { selectedConduce: Conduce | null, setSelectedConduce: any, setView: any, conduces: Conduce[], user: FirebaseUser }) {
+function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user, setAlertData, onDeleteConduce }: { selectedConduce: Conduce | null, setSelectedConduce: any, setView: any, conduces: Conduce[], user: FirebaseUser, setAlertData: any, onDeleteConduce: any }) {
   const [items, setItems] = useState<Item[]>([]);
   const [conducePendings, setConducePendings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1118,13 +1312,13 @@ function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user }:
     setSaving(true);
     
     if (items.some(i => i.cantidad_recibida === null || i.cantidad_recibida < 0)) {
-      alert("Por favor, audita todos los items con cantidades válidas.");
+      setAlertData({ message: "Por favor, audita todos los items con cantidades válidas.", type: 'error' });
       setSaving(false);
       return;
     }
 
     if (!entregadoPor.trim()) {
-      alert("Por favor, ingresa el nombre de quien entrega.");
+      setAlertData({ message: "Por favor, ingresa el nombre de quien entrega.", type: 'error' });
       setSaving(false);
       return;
     }
@@ -1232,9 +1426,18 @@ function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user }:
                     <td className="px-6 py-4 text-sm text-slate-600 font-medium">{c.suplidor_nombre || 'Desconocido'}</td>
                     <td className="px-6 py-4 text-sm text-slate-500">{new Date(c.fecha).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-right">
-                      <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-all">
-                        Auditar Ahora
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-all">
+                          Auditar Ahora
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onDeleteConduce(c.id); }}
+                          className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1396,7 +1599,7 @@ function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user }:
   );
 }
 
-function Pendings({ user, pendientes, setView, setSelectedConduce, conduces }: { user: FirebaseUser | null, pendientes: any[], setView: any, setSelectedConduce: any, conduces: Conduce[] }) {
+function Pendings({ user, pendientes, setView, setSelectedConduce, conduces, onDeletePending, setAlertData }: { user: FirebaseUser | null, pendientes: any[], setView: any, setSelectedConduce: any, conduces: Conduce[], onDeletePending: any, setAlertData: any }) {
   // Group by Conduce
   const groupedPendings = pendientes.reduce((acc: any, p) => {
     if (!acc[p.conduce_id]) {
@@ -1416,7 +1619,7 @@ function Pendings({ user, pendientes, setView, setSelectedConduce, conduces }: {
       setSelectedConduce(conduce);
       setView('audit');
     } else {
-      alert("No se encontró el conduce original.");
+      setAlertData({ message: "No se encontró el conduce original.", type: 'error' });
     }
   };
 
@@ -1457,9 +1660,18 @@ function Pendings({ user, pendientes, setView, setSelectedConduce, conduces }: {
                     <p className="font-bold text-slate-700">{p.descripcion}</p>
                     <p className="text-xs text-slate-500">Original: {p.cantidad_original} {p.unidad} | Recibido: {p.cantidad_recibida_inicial}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-red-600 font-black text-lg">-{p.cantidad_faltante}</p>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold">{p.unidad}</p>
+                  <div className="text-right flex items-center gap-4">
+                    <div>
+                      <p className="text-red-600 font-black text-lg">-{p.cantidad_faltante}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">{p.unidad}</p>
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onDeletePending(p.id); }}
+                      className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                      title="Eliminar Pendiente"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1478,11 +1690,24 @@ function Pendings({ user, pendientes, setView, setSelectedConduce, conduces }: {
   );
 }
 
-function History({ conduces }: { conduces: Conduce[] }) {
+function History({ conduces, initialFilter = 'all', onDeleteConduce }: { conduces: Conduce[], initialFilter?: 'all' | 'completado', onDeleteConduce: any }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [conduceItems, setConduceItems] = useState<Item[]>([]);
   const [conducePendings, setConducePendings] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'completado'>(initialFilter);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredConduces = conduces.filter(c => {
+    const matchesFilter = filter === 'all' || c.estado === 'completado';
+    const matchesSearch = c.conduce_nro.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          c.suplidor_nombre.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
+  useEffect(() => {
+    setFilter(initialFilter);
+  }, [initialFilter]);
 
   useEffect(() => {
     if (!expandedId) return;
@@ -1507,11 +1732,40 @@ function History({ conduces }: { conduces: Conduce[] }) {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Historial de Operaciones</h2>
-      <p className="text-slate-500">Consulta el ciclo de vida completo de cada recepción.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Historial de Operaciones</h2>
+          <p className="text-slate-500">Consulta el ciclo de vida completo de cada recepción.</p>
+        </div>
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+          <button 
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filter === 'all' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Todos
+          </button>
+          <button 
+            onClick={() => setFilter('completado')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filter === 'completado' ? 'bg-green-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Completados
+          </button>
+        </div>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+        <input 
+          type="text"
+          placeholder="Buscar por número de conduce o suplidor..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+        />
+      </div>
 
       <div className="space-y-4">
-        {conduces.map((c) => (
+        {filteredConduces.map((c) => (
           <div key={c.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div 
               onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
@@ -1536,6 +1790,13 @@ function History({ conduces }: { conduces: Conduce[] }) {
                 }`}>
                   {c.estado.replace('_', ' ')}
                 </span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onDeleteConduce(c.id); }}
+                  className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                  title="Eliminar Conduce"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
                 <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform ${expandedId === c.id ? 'rotate-90' : ''}`} />
               </div>
             </div>
@@ -1625,7 +1886,15 @@ function History({ conduces }: { conduces: Conduce[] }) {
   );
 }
 
-function Suppliers({ conduces }: { conduces: Conduce[] }) {
+function Suppliers({ conduces, setConfirmData, setAlertData, onDeleteConduce }: { conduces: Conduce[], setConfirmData: any, setAlertData: any, onDeleteConduce: any }) {
+  const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [mergeSource, setMergeSource] = useState('');
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const supplierStats: any = {};
   conduces.forEach(c => {
     if (!supplierStats[c.suplidor_nombre]) {
@@ -1643,20 +1912,371 @@ function Suppliers({ conduces }: { conduces: Conduce[] }) {
     else if (c.estado === 'con_faltantes') supplierStats[c.suplidor_nombre].faltantes++;
   });
 
+  const handleAddSupplier = async () => {
+    if (!newSupplierName.trim()) return;
+    setSaving(true);
+    try {
+      const id = newSupplierName.toLowerCase().replace(/\s/g, '_');
+      await setDoc(doc(db, 'suplidores', id), {
+        nombre: newSupplierName,
+        id: id
+      });
+      setNewSupplierName('');
+      setShowAddModal(false);
+    } catch (err) {
+      console.error(err);
+      setAlertData({ message: "Error al agregar suplidor.", type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const duplicatePairs: [string, string][] = [];
+  const names = Object.keys(supplierStats);
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const n1 = names[i];
+      const n2 = names[j];
+      // Detect if one is substring of other or both contain ROMSA
+      if (n1.toLowerCase().includes(n2.toLowerCase()) || 
+          n2.toLowerCase().includes(n1.toLowerCase()) || 
+          (n1.includes('ROMSA') && n2.includes('ROMSA'))) {
+        duplicatePairs.push([n1, n2]);
+      }
+    }
+  }
+
+  const quickMerge = async (source: string, target: string) => {
+    setMergeSource(source);
+    setMergeTarget(target);
+    
+    setConfirmData({
+      message: `¿Confirmas que "${source}" es lo mismo que "${target}"? Se unificarán todos los registros.`,
+      onConfirm: async () => {
+        setConfirmData(null);
+        setSaving(true);
+        try {
+          const sourceName = source.trim();
+          const targetName = target.trim();
+          const sourceId = sourceName.toLowerCase().replace(/\s/g, '_');
+          const targetId = targetName.toLowerCase().replace(/\s/g, '_');
+
+          const batch = writeBatch(db);
+          
+          const qConducesName = query(collection(db, 'conduces'), where('suplidor_nombre', '==', sourceName));
+          const qConducesId = query(collection(db, 'conduces'), where('suplidor_id', '==', sourceId));
+          const [snapName, snapId] = await Promise.all([getDocs(qConducesName), getDocs(qConducesId)]);
+          
+          const processedIds = new Set();
+          [...snapName.docs, ...snapId.docs].forEach(docSnap => {
+            if (!processedIds.has(docSnap.id)) {
+              batch.update(doc(db, 'conduces', docSnap.id), {
+                suplidor_nombre: targetName,
+                suplidor_id: targetId
+              });
+              processedIds.add(docSnap.id);
+            }
+          });
+
+          const qPendientesName = query(collection(db, 'pendientes'), where('suplidor_nombre', '==', sourceName));
+          const qPendientesId = query(collection(db, 'pendientes'), where('suplidor_id', '==', sourceId));
+          const [snapPName, snapPId] = await Promise.all([getDocs(qPendientesName), getDocs(qPendientesId)]);
+          
+          const processedPIds = new Set();
+          [...snapPName.docs, ...snapPId.docs].forEach(docSnap => {
+            if (!processedPIds.has(docSnap.id)) {
+              batch.update(doc(db, 'pendientes', docSnap.id), {
+                suplidor_nombre: targetName,
+                suplidor_id: targetId
+              });
+              processedPIds.add(docSnap.id);
+            }
+          });
+
+          batch.set(doc(db, 'suplidores', targetId), { id: targetId, nombre: targetName }, { merge: true });
+          batch.delete(doc(db, 'suplidores', sourceId));
+          
+          await batch.commit();
+          setAlertData({ message: `¡Listo! Se han unificado los registros bajo "${targetName}".`, type: 'success' });
+        } catch (err) {
+          console.error(err);
+          setAlertData({ message: "Error al unificar los registros.", type: 'error' });
+        } finally {
+          setSaving(false);
+          setMergeSource('');
+          setMergeTarget('');
+        }
+      }
+    });
+  };
+
+  const handleMergeSuppliers = async () => {
+    if (!mergeSource || !mergeTarget || mergeSource.trim() === mergeTarget.trim()) return;
+    const sourceName = mergeSource.trim();
+    const targetName = mergeTarget.trim();
+    
+    setConfirmData({
+      message: `¿Estás seguro de que quieres unir "${sourceName}" con "${targetName}"? Todos los registros de "${sourceName}" pasarán a "${targetName}".`,
+      onConfirm: async () => {
+        setConfirmData(null);
+        setSaving(true);
+        try {
+          const sourceId = sourceName.toLowerCase().replace(/\s/g, '_');
+          const targetId = targetName.toLowerCase().replace(/\s/g, '_');
+
+          const batch = writeBatch(db);
+          
+          const qConducesName = query(collection(db, 'conduces'), where('suplidor_nombre', '==', sourceName));
+          const qConducesId = query(collection(db, 'conduces'), where('suplidor_id', '==', sourceId));
+          const [snapName, snapId] = await Promise.all([getDocs(qConducesName), getDocs(qConducesId)]);
+          
+          const processedIds = new Set();
+          [...snapName.docs, ...snapId.docs].forEach(docSnap => {
+            if (!processedIds.has(docSnap.id)) {
+              batch.update(doc(db, 'conduces', docSnap.id), {
+                suplidor_nombre: targetName,
+                suplidor_id: targetId
+              });
+              processedIds.add(docSnap.id);
+            }
+          });
+
+          const qPendientesName = query(collection(db, 'pendientes'), where('suplidor_nombre', '==', sourceName));
+          const qPendientesId = query(collection(db, 'pendientes'), where('suplidor_id', '==', sourceId));
+          const [snapPName, snapPId] = await Promise.all([getDocs(qPendientesName), getDocs(qPendientesId)]);
+          
+          const processedPIds = new Set();
+          [...snapPName.docs, ...snapPId.docs].forEach(docSnap => {
+            if (!processedPIds.has(docSnap.id)) {
+              batch.update(doc(db, 'pendientes', docSnap.id), {
+                suplidor_nombre: targetName,
+                suplidor_id: targetId
+              });
+              processedPIds.add(docSnap.id);
+            }
+          });
+
+          batch.set(doc(db, 'suplidores', targetId), { id: targetId, nombre: targetName }, { merge: true });
+          batch.delete(doc(db, 'suplidores', sourceId));
+          
+          await batch.commit();
+          setShowMergeModal(false);
+          setMergeSource('');
+          setMergeTarget('');
+          setAlertData({ message: `Unificación completada con éxito bajo "${targetName}".`, type: 'success' });
+        } catch (err) {
+          console.error(err);
+          setAlertData({ message: "Error al unificar suplidores.", type: 'error' });
+        } finally {
+          setSaving(false);
+        }
+      }
+    });
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Directorio de Suplidores</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Directorio de Suplidores</h2>
+          <p className="text-slate-500 text-sm">Gestiona tus proveedores y unifica duplicados.</p>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setShowMergeModal(true)}
+            className="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-amber-200 transition-all"
+          >
+            <Sparkles className="w-5 h-5" />
+            Unificar
+          </button>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+          >
+            <Plus className="w-5 h-5" />
+            Nuevo
+          </button>
+        </div>
+      </div>
+
+      {duplicatePairs.length > 0 && (
+        <div className="space-y-3">
+          {duplicatePairs.map((pair, idx) => (
+            <motion.div 
+              key={idx}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-amber-800">Duplicado detectado</p>
+                  <p className="text-xs text-amber-600">
+                    ¿Es <span className="font-bold">"{pair[0]}"</span> lo mismo que <span className="font-bold">"{pair[1]}"</span>?
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => quickMerge(pair[0], pair[1])}
+                  className="bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-amber-700 transition-all shadow-sm"
+                >
+                  Unificar a "{pair[1]}"
+                </button>
+                <button 
+                  onClick={() => quickMerge(pair[1], pair[0])}
+                  className="bg-white text-amber-600 border border-amber-200 px-4 py-2 rounded-lg text-xs font-bold hover:bg-amber-50 transition-all shadow-sm"
+                >
+                  Unificar a "{pair[0]}"
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+            >
+              <h3 className="text-xl font-bold text-slate-800 mb-4">Agregar Nuevo Suplidor</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Nombre del Suplidor</label>
+                  <input 
+                    type="text"
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    placeholder="Ej: Distribuidora Corripio"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    onClick={() => setShowAddModal(false)}
+                    className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleAddSupplier}
+                    disabled={saving || !newSupplierName.trim()}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showMergeModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+            >
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Unificar Suplidores</h3>
+              <p className="text-sm text-slate-500 mb-6">Mueve todos los registros de un suplidor a otro para corregir duplicados.</p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Suplidor con error (Origen)</label>
+                  <select 
+                    value={mergeSource}
+                    onChange={(e) => setMergeSource(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                  >
+                    <option value="">Selecciona suplidor...</option>
+                    {Object.keys(supplierStats).map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-center">
+                  <ArrowRight className="w-6 h-6 text-slate-300 rotate-90 sm:rotate-0" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Nombre Correcto (Destino)</label>
+                  <input 
+                    list="merge-targets"
+                    type="text"
+                    value={mergeTarget}
+                    onChange={(e) => setMergeTarget(e.target.value)}
+                    placeholder="Escribe o selecciona el nombre correcto..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                  />
+                  <datalist id="merge-targets">
+                    {Object.keys(supplierStats).map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                  <p className="text-[10px] text-slate-400 mt-1 italic">Si el nombre no existe, se creará automáticamente.</p>
+                </div>
+                
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    onClick={() => setShowMergeModal(false)}
+                    className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleMergeSuppliers}
+                    disabled={saving || !mergeSource || !mergeTarget || mergeSource === mergeTarget}
+                    className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-bold hover:bg-amber-700 transition-all disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Unificar Ahora'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {Object.values(supplierStats).map((s: any) => (
           <div key={s.nombre} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-                  <Truck className="w-6 h-6" />
+            <div 
+              className="p-6 cursor-pointer hover:bg-slate-50/50 transition-colors"
+              onClick={() => setExpandedSupplier(expandedSupplier === s.nombre ? null : s.nombre)}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                    <Truck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">{s.nombre}</h3>
+                    <p className="text-xs text-slate-500">{s.total} Conduces totales</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-800">{s.nombre}</h3>
-                  <p className="text-xs text-slate-500">{s.total} Conduces totales</p>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMergeSource(s.nombre);
+                      setMergeTarget(s.nombre);
+                      setShowMergeModal(true);
+                    }}
+                    className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                    title="Corregir o Unificar"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                  <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform ${expandedSupplier === s.nombre ? 'rotate-90' : ''}`} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
@@ -1671,22 +2291,45 @@ function Suppliers({ conduces }: { conduces: Conduce[] }) {
               </div>
             </div>
             
-            <div className="bg-slate-50 border-t border-slate-100 p-4 flex-1">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Conduces Asociados</p>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                {s.conduces.map((c: Conduce) => (
-                  <div key={c.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
-                    <span className="font-mono font-bold text-slate-700">#{c.conduce_nro}</span>
-                    <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${
-                      c.estado === 'completado' ? 'bg-green-100 text-green-700' : 
-                      c.estado === 'con_faltantes' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {c.estado.replace('_', ' ')}
-                    </span>
+            <AnimatePresence>
+              {expandedSupplier === s.nombre && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="bg-slate-50 border-t border-slate-100 overflow-hidden"
+                >
+                  <div className="p-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Conduces Asociados</p>
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                      {s.conduces.map((c: Conduce) => (
+                        <div key={c.id} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 text-xs shadow-sm">
+                          <div>
+                            <span className="font-mono font-bold text-slate-700 block">#{c.conduce_nro}</span>
+                            <span className="text-[9px] text-slate-400">{new Date(c.fecha).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${
+                              c.estado === 'completado' ? 'bg-green-100 text-green-700' : 
+                              c.estado === 'con_faltantes' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {c.estado.replace('_', ' ')}
+                            </span>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); onDeleteConduce(c.id); }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                              title="Eliminar Conduce"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         ))}
       </div>
@@ -1694,7 +2337,7 @@ function Suppliers({ conduces }: { conduces: Conduce[] }) {
   );
 }
 
-function Reports({ conduces }: { conduces: Conduce[] }) {
+function Reports({ conduces, setAlertData }: { conduces: Conduce[], setAlertData: any }) {
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [exporting, setExporting] = useState(false);
@@ -1774,7 +2417,7 @@ function Reports({ conduces }: { conduces: Conduce[] }) {
       XLSX.writeFile(wb, filename);
     } catch (error) {
       console.error("Error exporting excel:", error);
-      alert("Error al exportar el reporte.");
+      setAlertData({ message: "Error al exportar el reporte.", type: 'error' });
     } finally {
       setExporting(false);
     }
