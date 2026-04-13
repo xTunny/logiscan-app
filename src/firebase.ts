@@ -18,8 +18,17 @@ import {
   query, 
   where, 
   orderBy, 
-  getDocs 
+  getDocs,
+  writeBatch // <-- Añadido aquí para unificar suplidores y borrar en masa
 } from 'firebase/firestore';
+
+// 🔥 AÑADIMOS STORAGE para que las fotos de los conduces se guarden sin error
+import { 
+  getStorage, 
+  ref, 
+  uploadString, 
+  getDownloadURL 
+} from 'firebase/storage';
 
 // Configuración final con la API Key correcta verificada
 const firebaseConfig = {
@@ -43,6 +52,9 @@ export const auth = getAuth(app);
  */
 export const db = getFirestore(app, "ai-studio-141ffde9-4d74-461d-bc56-722e70891227");
 
+// Inicializar Storage para las fotos
+export const storage = getStorage(app);
+
 export const googleProvider = new GoogleAuthProvider();
 
 // Configurar para que Google siempre pida elegir la cuenta
@@ -63,7 +75,11 @@ export {
   query, 
   where, 
   orderBy, 
-  getDocs 
+  getDocs,
+  writeBatch, // <-- Exportado aquí
+  ref,        // <-- Exportados para Storage
+  uploadString,
+  getDownloadURL
 };
 
 export type { User };
