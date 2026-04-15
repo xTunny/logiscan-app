@@ -196,23 +196,33 @@ export default function App() {
     if (!user) return;
 
     // Listen for conduces
-    const qConduces = query(collection(db, 'conduces'), orderBy('fecha', 'desc'));
+    const qConduces = collection(db, 'conduces');
     const unsubConduces = onSnapshot(qConduces, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Conduce));
+      console.log("Conduces fetched:", data.length);
       setConduces(data);
+    }, (error) => {
+      console.error("Error fetching conduces:", error);
     });
 
     // Listen for suplidores
-    const qSuplidores = query(collection(db, 'suplidores'), orderBy('nombre'));
+    const qSuplidores = collection(db, 'suplidores');
     const unsubSuplidores = onSnapshot(qSuplidores, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Suplidor));
+      console.log("Suplidores fetched:", data.length);
       setSuplidores(data);
+    }, (error) => {
+      console.error("Error fetching suplidores:", error);
     });
 
     // Listen for pendientes
-    const qPendientes = query(collection(db, 'pendientes'), where('estado', '==', 'abierto'));
+    const qPendientes = collection(db, 'pendientes');
     const unsubPendientes = onSnapshot(qPendientes, (snapshot) => {
-      setPendientes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log("Pendientes fetched:", data.length);
+      setPendientes(data);
+    }, (error) => {
+      console.error("Error fetching pendientes:", error);
     });
 
     return () => {
@@ -452,7 +462,7 @@ export default function App() {
             )}
             {view === 'suppliers' && (
               <motion.div key="suppliers" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Suppliers conduces={conduces} setConfirmData={setConfirmData} setAlertData={setAlertData} onDeleteConduce={handleDeleteConduce} />
+                <Suppliers conduces={conduces} suplidores={suplidores} setConfirmData={setConfirmData} setAlertData={setAlertData} onDeleteConduce={handleDeleteConduce} />
               </motion.div>
             )}
             {view === 'history' && (
@@ -834,7 +844,7 @@ function Dashboard({ conduces, pendientes, setView, setSelectedConduce, setHisto
     pendientesAuditoria: conduces.filter(c => c.estado === 'pendiente_auditoria').length,
     completados: conduces.filter(c => c.estado === 'completado').length,
     conFaltantes: conduces.filter(c => c.estado === 'con_faltantes').length,
-    itemsPendientes: pendientes.reduce((acc, p) => acc + (p.cantidad_faltante || 0), 0)
+    itemsPendientes: pendientes.filter(p => p.estado === 'abierto').reduce((acc, p) => acc + (p.cantidad_faltante || 0), 0)
   };
 
   return (
@@ -915,7 +925,18 @@ function Dashboard({ conduces, pendientes, setView, setSelectedConduce, setHisto
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {conduces.slice(0, 10).map((c) => (
+              {conduces
+                .slice()
+                .sort((a, b) => {
+                  const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
+                  const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
+                  const timeA = isNaN(dateA) ? 0 : dateA;
+                  const timeB = isNaN(dateB) ? 0 : dateB;
+                  if (timeB !== timeA) return timeB - timeA;
+                  return (b.id || '').localeCompare(a.id || '');
+                })
+                .slice(0, 10)
+                .map((c) => (
                 <tr 
                   key={c.id} 
                   onClick={() => { setSelectedConduce(c); setView('audit'); }}
@@ -1265,7 +1286,16 @@ function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user, s
   const [entregadoPor, setEntregadoPor] = useState('');
   const [fechaConduce, setFechaConduce] = useState('');
 
-  const conducesPendientes = conduces.filter(c => c.estado === 'pendiente_auditoria' || c.estado === 'con_faltantes');
+  const conducesPendientes = conduces
+    .filter(c => c.estado === 'pendiente_auditoria' || c.estado === 'con_faltantes')
+    .sort((a, b) => {
+      const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
+      const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
+      const timeA = isNaN(dateA) ? 0 : dateA;
+      const timeB = isNaN(dateB) ? 0 : dateB;
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
   useEffect(() => {
     if (selectedConduce) {
@@ -1600,8 +1630,12 @@ function Audit({ selectedConduce, setSelectedConduce, setView, conduces, user, s
 }
 
 function Pendings({ user, pendientes, setView, setSelectedConduce, conduces, onDeletePending, setAlertData }: { user: FirebaseUser | null, pendientes: any[], setView: any, setSelectedConduce: any, conduces: Conduce[], onDeletePending: any, setAlertData: any }) {
+  const [filter, setFilter] = useState<'abierto' | 'all'>('abierto');
+
+  const filteredPendientes = pendientes.filter(p => filter === 'all' || p.estado === 'abierto');
+
   // Group by Conduce
-  const groupedPendings = pendientes.reduce((acc: any, p) => {
+  const groupedPendings = filteredPendientes.reduce((acc: any, p) => {
     if (!acc[p.conduce_id]) {
       acc[p.conduce_id] = {
         conduce_nro: p.conduce_nro,
@@ -1632,6 +1666,20 @@ function Pendings({ user, pendientes, setView, setSelectedConduce, conduces, onD
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Gestión de Pendientes</h2>
           <p className="text-slate-500">Mercancía faltante agrupada por documento original.</p>
+        </div>
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm ml-auto">
+          <button 
+            onClick={() => setFilter('abierto')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filter === 'abierto' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Abiertos
+          </button>
+          <button 
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filter === 'all' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Todos
+          </button>
         </div>
       </div>
       
@@ -1698,12 +1746,21 @@ function History({ conduces, initialFilter = 'all', onDeleteConduce }: { conduce
   const [filter, setFilter] = useState<'all' | 'completado'>(initialFilter);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredConduces = conduces.filter(c => {
-    const matchesFilter = filter === 'all' || c.estado === 'completado';
-    const matchesSearch = c.conduce_nro.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          c.suplidor_nombre.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  const filteredConduces = conduces
+    .filter(c => {
+      const matchesFilter = filter === 'all' || c.estado === 'completado';
+      const matchesSearch = (c.conduce_nro || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            (c.suplidor_nombre || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesFilter && matchesSearch;
+    })
+    .sort((a, b) => {
+      const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
+      const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
+      const timeA = isNaN(dateA) ? 0 : dateA;
+      const timeB = isNaN(dateB) ? 0 : dateB;
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
   useEffect(() => {
     setFilter(initialFilter);
@@ -1886,7 +1943,7 @@ function History({ conduces, initialFilter = 'all', onDeleteConduce }: { conduce
   );
 }
 
-function Suppliers({ conduces, setConfirmData, setAlertData, onDeleteConduce }: { conduces: Conduce[], setConfirmData: any, setAlertData: any, onDeleteConduce: any }) {
+function Suppliers({ conduces, suplidores, setConfirmData, setAlertData, onDeleteConduce }: { conduces: Conduce[], suplidores: Suplidor[], setConfirmData: any, setAlertData: any, onDeleteConduce: any }) {
   const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -1896,6 +1953,19 @@ function Suppliers({ conduces, setConfirmData, setAlertData, onDeleteConduce }: 
   const [saving, setSaving] = useState(false);
 
   const supplierStats: any = {};
+  
+  // Initialize with all known suppliers from the database
+  suplidores.forEach(s => {
+    supplierStats[s.nombre] = {
+      nombre: s.nombre,
+      total: 0,
+      completos: 0,
+      faltantes: 0,
+      conduces: []
+    };
+  });
+
+  // Add stats from actual conduces (handles cases where supplier might not be in the suplidores collection yet)
   conduces.forEach(c => {
     if (!supplierStats[c.suplidor_nombre]) {
       supplierStats[c.suplidor_nombre] = { 
@@ -2247,7 +2317,9 @@ function Suppliers({ conduces, setConfirmData, setAlertData, onDeleteConduce }: 
       </AnimatePresence>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {Object.values(supplierStats).map((s: any) => (
+        {(Object.values(supplierStats) as any[])
+          .sort((a, b) => a.nombre.localeCompare(b.nombre))
+          .map((s: any) => (
           <div key={s.nombre} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             <div 
               className="p-6 cursor-pointer hover:bg-slate-50/50 transition-colors"
