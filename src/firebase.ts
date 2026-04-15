@@ -19,10 +19,10 @@ import {
   where, 
   orderBy, 
   getDocs,
-  writeBatch // <-- Añadido aquí para unificar suplidores y borrar en masa
+  writeBatch // <-- Necesario para unificar suplidores y borrar en masa
 } from 'firebase/firestore';
 
-// 🔥 AÑADIMOS STORAGE para que las fotos de los conduces se guarden sin error
+// Añadimos STORAGE para que las fotos de los conduces se guarden
 import { 
   getStorage, 
   ref, 
@@ -30,7 +30,7 @@ import {
   getDownloadURL 
 } from 'firebase/storage';
 
-// Configuración final con la API Key correcta verificada
+// Tu configuración exacta
 const firebaseConfig = {
   apiKey: "AIzaSyA323E4zyCs2_Qrpz7nHzIWYa3DrA8vYcw", 
   authDomain: "gen-lang-client-0416870184.firebaseapp.com",
@@ -46,11 +46,8 @@ const app = initializeApp(firebaseConfig);
 // EXPORTAR SERVICIOS
 export const auth = getAuth(app);
 
-/**
- * IMPORTANTE: Aquí especificamos el ID de la base de datos 
- * donde están tus registros de "conduces" y "Genao Yimy".
- */
-export const db = getFirestore(app, "ai-studio-141ffde9-4d74-461d-bc56-722e70891227");
+// 👇 LA CORRECCIÓN CLAVE: Esto asegura que leas tus datos reales
+export const db = getFirestore(app);
 
 // Inicializar Storage para las fotos
 export const storage = getStorage(app);
@@ -76,8 +73,8 @@ export {
   where, 
   orderBy, 
   getDocs,
-  writeBatch, // <-- Exportado aquí
-  ref,        // <-- Exportados para Storage
+  writeBatch,
+  ref,
   uploadString,
   getDownloadURL
 };
