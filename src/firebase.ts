@@ -19,10 +19,9 @@ import {
   where, 
   orderBy, 
   getDocs,
-  writeBatch // <-- Necesario para unificar suplidores y borrar en masa
+  writeBatch 
 } from 'firebase/firestore';
 
-// Añadimos STORAGE para que las fotos de los conduces se guarden
 import { 
   getStorage, 
   ref, 
@@ -46,15 +45,14 @@ const app = initializeApp(firebaseConfig);
 // EXPORTAR SERVICIOS
 export const auth = getAuth(app);
 
-// 👇 LA CORRECCIÓN CLAVE: Esto asegura que leas tus datos reales
-export const db = getFirestore(app);
+// 👇 AQUÍ ESTABA MI ERROR. ¡Le devolvemos el nombre a tu bóveda real! 👇
+export const db = getFirestore(app, "ai-studio-141ffde9-4d74-461d-bc56-722e70891227");
 
 // Inicializar Storage para las fotos
 export const storage = getStorage(app);
 
 export const googleProvider = new GoogleAuthProvider();
 
-// Configurar para que Google siempre pida elegir la cuenta
 googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
